@@ -5,7 +5,7 @@ CREATE TABLE "article_cache"(
         TIME zone NOT NULL,
         "source" VARCHAR(255) NOT NULL,
         "title" VARCHAR(255) NOT NULL,
-        "description" TEXT NOT NULL,
+        "description" TEXT NULL,
         "article_url" TEXT NOT NULL,
         "image_url" TEXT NULL,
         "country" VARCHAR(255) NULL,
@@ -31,7 +31,7 @@ CREATE TABLE "saved_article"(
         "article_id" VARCHAR(255) NOT NULL,
         "source" VARCHAR(255) NOT NULL,
         "title" VARCHAR(255) NOT NULL,
-        "description" TEXT NOT NULL,
+        "description" TEXT NULL,
         "article_url" TEXT NOT NULL,
         "image_url" TEXT NULL,
         "user_id" UUID NOT NULL
@@ -46,8 +46,7 @@ CREATE TABLE "user"(
     "email" VARCHAR(255) NOT NULL,
     "password" VARCHAR(255) NOT NULL,
     "local_state" VARCHAR(255) NULL,
-    "local_city" VARCHAR(255) NULL,
-    "local_zip" VARCHAR(255) NULL
+    "local_city" VARCHAR(255) NULL
 );
 ALTER TABLE
     "user" ADD PRIMARY KEY("id");
