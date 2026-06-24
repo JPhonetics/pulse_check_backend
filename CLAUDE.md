@@ -32,16 +32,20 @@ The backend is **Supabase-native**: all API endpoints, auth, and storage are pro
 
 ### Database Schema (`app_outline/test_db_schema.sql`)
 
+`app_outline/test_db_schema.sql` is a **design artifact**, not a Supabase migration. Actual migrations live in `supabase/migrations/` (not yet created). When implementing schema changes, create migration files there and apply with `npx supabase db push`.
+
 Four tables:
 
 | Table | Purpose |
 |---|---|
-| `user` | User accounts — `id` (UUID PK), email, password, first_name, optional `local_state`/`local_city`/`local_zip` |
+| `user` | User accounts — `id` (UUID PK), email, password, first_name, optional `local_state`/`local_city` |
 | `article_cache` | Fetched news articles — `article_id` (VARCHAR PK), title, description, URLs, source, category, country, timestamps |
 | `saved_article` | Articles bookmarked by users — FK to `user.id`, stores article metadata inline (denormalized from `article_cache`) |
 | `saved_search` | Keyword searches saved by users — FK to `user.id`, keywords + optional `date_from`/`date_to` |
 
 `saved_article` stores article metadata directly (not just a FK to `article_cache`) so saved articles persist even if the cache is evicted.
+
+**Column → UI mapping:** `article_cache.category` drives sub-category filtering (Business, Crime, etc.); `article_cache.country` drives region filtering (World/US). Local region is not a DB column — it's resolved via keyword search (see Local region resolution below).
 
 ### User Types
 
@@ -58,6 +62,14 @@ All UX decisions, screen flows, and edge cases are documented here. Notable deci
 - Article links open the **source site in a new tab**
 - Password reset links expire after **30 minutes**
 - On login, if device has a local region but profile does not, prompt once to merge
+
+### Local Region Resolution
+
+The News API has no city/state field, so Local results are synthesized via keyword search with a two-tier fallback:
+1. Query the city name (e.g. `"Hacienda Heights"`).
+2. If results are fewer than one page, widen to the state (e.g. `"California"`).
+
+When widened, show a banner: *"Limited results for {City} — showing {State} news."* Favor articles whose **title** contains the location term over body-only mentions.
 
 ### External Integrations (planned)
 

@@ -2,6 +2,8 @@
 
 *Your daily pulse on the world.*
 
+> This is a revised version of the original journey. It keeps your structure and intent, but resolves inconsistencies with the wireframe, fills documentation gaps (Donate, terms checkbox, password-reset confirmation, etc.), and tightens several flows. A full **Changelog** with rationale is at the end.
+
 ---
 
 ## 1. Product Summary
@@ -65,17 +67,26 @@ These appear on every browse/results page and are described once here instead of
 ## 5. Regions & Local Setup
 
 - **World / US**: filter headlines to that region.
-- **Local**: filters to the user's set region.
+- **Local**: filters to the user's set region (a **City + State**).
   - If no local region is set, selecting **Local** opens the **Set Local Region** popup.
   - The popup can also be opened any time via the header location label.
 
 **Set Local Region popup**
-- A **single input field** labeled *"Set your local region — enter a city, state, or ZIP code,"* with a **Submit** button.
-- **Type-ahead suggestions:** as the user types, matching locations appear in a dropdown drawn from the known-locations list. Selecting a suggestion fills the field and enables Submit. Because users pick from real suggestions, spelling validates automatically.
-- Accepts **full names and abbreviations** (e.g. "California" or "CA") and ZIP codes (resolved to a city/state for display).
-- Submit stays **disabled until a valid location is selected**, preventing half-typed or invalid entries.
-- On submit, the header label updates and Local results load.
-- **Error state:** no matches shows inline *"We couldn't find that location — check spelling or try a ZIP code."*
+- A **single input field** labeled *"Set your local region — enter a city and state,"* with a **Submit** button.
+- **Type-ahead suggestions:** as the user types, matching **"City, State"** entries appear in a dropdown drawn from a bundled city/state reference list. Selecting a suggestion fills both fields at once and enables Submit. Because users pick from real suggestions, spelling validates automatically and the city is confirmed against the correct state.
+- Accepts state by **full name or abbreviation** (e.g. "California" or "CA").
+- Submit stays **disabled until a valid City + State is selected**, preventing half-typed or invalid entries.
+- On submit, the header label updates (e.g. *Hacienda Heights, CA*) and Local results load.
+- **Error state:** no matches shows inline *"We couldn't find that location — check the city and state spelling."*
+
+**How Local results are resolved**
+The news source filters by country, category, and keyword — it has no city/state field — so Local is synthesized as a keyword query with a two-tier fallback:
+1. **City tier:** query the city name (e.g. `"Hacienda Heights"`).
+2. **State fallback:** if city results are thin (fewer than one page), widen to the state (e.g. `"California"`).
+
+When results are widened, show a banner so the user understands what they're seeing: *"Limited results for {City} — showing {State} news."* Results are ordered newest-first; a light relevance pass favors articles whose title (not just body) contains the location term, keeping genuine local stories above incidental mentions.
+
+> *Note:* with city-then-state only (no county/metro tier), a small town with little coverage jumps straight to statewide results. This is an accepted trade-off for keeping location to City + State.
 
 ---
 
@@ -189,7 +200,7 @@ Toggles between **Profile** (default) and **Password**.
 12. **Error page** — documented.
 
 **UX improvements**
-13. **Set Local Region** — now a **single type-ahead field** ("city, state, or ZIP") with suggestions and a not-found error state, replacing the three ambiguous boxes that made users guess which to fill.
+13. **Set Local Region** — now a **single "City, State" type-ahead field** with suggestions and a not-found error state, replacing the three ambiguous boxes. (ZIP was dropped; location is City + State only.)
 14. **Saved search run vs. unsave** — each card now has a dedicated **Search** button to re-run, separate from the save flag, removing any ambiguity with the unsave action.
 15. **Guest→login region merge** — handle the case where a guest who set a region later logs in, instead of silently dropping or overwriting it.
 16. **Search ↔ filter exclusivity** — defined what happens when a user clicks a region/sub-category while in search (exits search), which the original left ambiguous.
