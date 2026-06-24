@@ -2,15 +2,15 @@
 -- Table order and constraints may not be valid for execution.
 
 CREATE TABLE public.user (
-  id uuid NOT NULL,
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
   created_date timestamp without time zone NOT NULL DEFAULT now(),
   modified_date timestamp without time zone NOT NULL DEFAULT now(),
   first_name character varying NOT NULL,
   email character varying NOT NULL UNIQUE,
+  password character varying NOT NULL,
   local_state character varying,
   local_city character varying,
-  CONSTRAINT user_pkey PRIMARY KEY (id),
-  CONSTRAINT user_auth_id_fk FOREIGN KEY (id) REFERENCES auth.users(id)
+  CONSTRAINT user_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.article_cache (
   article_id character varying NOT NULL,
