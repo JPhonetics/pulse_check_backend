@@ -1,0 +1,7 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /home/jphonetics/cp_projects/pulse_check/backend log --oneline)"
+    ]
+  }
+}
