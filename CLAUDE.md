@@ -32,7 +32,11 @@ The backend is **Supabase-native**: all API endpoints, auth, and storage are pro
 
 ### Database Schema
 
-`app_outline/test_db_schema.sql` is a **design artifact** only. Actual migrations live in `supabase/migrations/` (files `20260624000001`–`20260624000004`). When implementing schema changes, create new migration files there and apply with `npx supabase db push`.
+Two schema files exist in `app_outline/`:
+- `test_db_schema.sql` — original design artifact (ignore for implementation)
+- `current_db_schema.sql` — snapshot of the current hosted Supabase schema (updated via `npx supabase db pull`)
+
+Actual migrations live in `supabase/migrations/` (files `20260624000001`–`20260624000004`). When implementing schema changes, create new migration files there and apply with `npx supabase db push`.
 
 Four tables:
 
@@ -74,6 +78,10 @@ The News API has no city/state field, so Local results are synthesized via keywo
 2. If results are fewer than one page, widen to the state (e.g. `"California"`).
 
 When widened, show a banner: *"Limited results for {City} — showing {State} news."* Favor articles whose **title** contains the location term over body-only mentions.
+
+### Test Data
+
+`app_outline/sql_test_data/` contains CSV fixtures for all four tables (`user_rows.csv`, `article_cache_rows.csv`, `saved_article_rows.csv`, `saved_search_rows.csv`) for manual seeding or local testing.
 
 ### External Integrations (planned)
 
