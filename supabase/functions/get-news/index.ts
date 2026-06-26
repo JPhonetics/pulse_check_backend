@@ -167,7 +167,7 @@ async function upsertCache(
     article_url: a.link || "",
     image_url: a.image_url || null,
     published_at: normalizePubDate(a.pubDate || ""),
-    source: a.source_id || "",
+    source: a.source_name || a.source_id || "",
     country: country ?? null,
     category: cacheCategory ?? null,
     group_key: normalizeGroupKey(a.title || ""),
@@ -312,7 +312,7 @@ async function handleLocal(
     article_url: r.link || "",
     image_url: r.image_url || null,
     published_at: normalizePubDate(r.pubDate || ""),
-    source: r.source_id || "",
+    source: r.source_name || r.source_id || "",
     group_key: normalizeGroupKey(r.title || ""),
   }));
   const groups = groupRows(rawWithKey);
