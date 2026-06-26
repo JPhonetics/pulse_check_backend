@@ -19,6 +19,14 @@ const CATEGORY_MAP: Record<string, string> = {
 const PAGE_SIZE = 9;
 const CACHE_TTL_MS = 15 * 60 * 1000;
 
+interface ArticleGroup {
+  rep: any;
+  groupKey: string;
+  sources: Array<{ id: string; source: string; url: string; imageUrl: string; publishDate: string; title: string }>;
+}
+
+const POOL_LIMIT = 500;
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function jsonResponse(body: unknown, status = 200): Response {
@@ -57,21 +65,60 @@ function applyNullSafeFilter(q: any, col: string, val: string | null): any {
   return val === null ? q.is(col, null) : q.eq(col, val);
 }
 
-// ─── Mappers ─────────────────────────────────────────────────────────────────
+function groupRows(rows: any[]): ArticleGroup[] {
+  const map = new Map<string, any[]>();
+  for (const row of rows) {
+    const key = row.group_key ?? row.article_id;
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(row);
+  }
+  return Array.from(map.values()).map(members => {
+    const withImage = members.filter((r: any) => r.image_url);
+    const pool = withImage.length ? withImage : members;
+    const rep = pool.reduce((a: any, b: any) =>
+      new Date(a.published_at) >= new Date(b.published_at) ? a : b
+    );
+    const sources = members
+      .map((r: any) => ({
+        id: r.article_id,
+        source: r.source,
+        url: r.article_url,
+        imageUrl: r.image_url || "",
+        publishDate: r.published_at,
+        title: r.title,
+        snippet: r.description || "",
+      }))
+      .sort((a: any, b: any) => a.source.localeCompare(b.source));
+    return { rep, groupKey: (rep.group_key ?? rep.article_id) as string, sources };
+  });
+}
 
-function cacheRowToArticle(row: any, region: string, category: string) {
+function paginateGroups(groups: ArticleGroup[], page: number) {
+  const total = groups.length;
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const start = (page - 1) * PAGE_SIZE;
+  return { pageGroups: groups.slice(start, start + PAGE_SIZE), total, totalPages };
+}
+
+function groupToArticle(g: ArticleGroup, region: string, category: string) {
+  const { rep, groupKey, sources } = g;
   return {
-    id: row.article_id,
+    id: rep.article_id,
     region,
     category,
-    title: row.title,
-    publishDate: row.published_at,
-    source: row.source,
-    snippet: row.description || "",
-    imageUrl: row.image_url || "",
-    url: row.article_url,
+    title: rep.title,
+    publishDate: rep.published_at,
+    source: rep.source,
+    snippet: rep.description || "",
+    imageUrl: rep.image_url || "",
+    url: rep.article_url,
+    groupKey,
+    sourceCount: sources.length,
+    sources,
   };
 }
+
+// ─── Mappers ─────────────────────────────────────────────────────────────────
 
 function rawToArticle(a: any, region: string, category: string) {
   return {
@@ -129,26 +176,20 @@ async function upsertCache(
   if (error) console.error("[get-news] upsertCache error:", error.message);
 }
 
-async function fetchCachePage(
+async function fetchCachePool(
   sb: ReturnType<typeof createClient>,
-  {
-    country,
-    cacheCategory,
-    page,
-    sort = "desc",
-  }: { country: string | null; cacheCategory: string | null; page: number; sort?: string },
-): Promise<{ rows: any[]; total: number }> {
-  const offset = (page - 1) * PAGE_SIZE;
+  { country, cacheCategory }: { country: string | null; cacheCategory: string | null },
+): Promise<any[]> {
   let q = sb
     .from("article_cache")
-    .select("*", { count: "exact" })
-    .order("published_at", { ascending: sort === "asc" })
-    .range(offset, offset + PAGE_SIZE - 1);
+    .select("*")
+    .order("published_at", { ascending: false })
+    .limit(POOL_LIMIT);
   q = applyNullSafeFilter(q, "country", country);
   q = applyNullSafeFilter(q, "category", cacheCategory);
-  const { data, count, error } = await q;
+  const { data, error } = await q;
   if (error) throw error;
-  return { rows: data ?? [], total: count ?? 0 };
+  return data ?? [];
 }
 
 // ─── newsdata.io ──────────────────────────────────────────────────────────────
@@ -204,9 +245,16 @@ async function handleBrowse(
     }
   }
 
-  const { rows, total } = await fetchCachePage(sb, { country, cacheCategory, page });
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  return jsonResponse({ articles: rows.map((r) => cacheRowToArticle(r, region, category)), totalPages, total, page, localBanner: null });
+  const rows = await fetchCachePool(sb, { country, cacheCategory });
+  const groups = groupRows(rows);
+  const { pageGroups, total, totalPages } = paginateGroups(groups, page);
+  return jsonResponse({
+    articles: pageGroups.map((g) => groupToArticle(g, region, category)),
+    totalPages,
+    total,
+    page,
+    localBanner: null,
+  });
 }
 
 async function handleLocal(
@@ -257,12 +305,25 @@ async function handleLocal(
     return ah === bh ? 0 : ah ? -1 : 1;
   });
 
-  const total = raw.length;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const start = (page - 1) * PAGE_SIZE;
-  const articles = raw.slice(start, start + PAGE_SIZE).map((r: any) => rawToArticle(r, "Local", category));
-
-  return jsonResponse({ articles, totalPages, total, page, localBanner });
+  const rawWithKey = raw.map((r: any) => ({
+    article_id: r.article_id,
+    title: r.title || "",
+    description: r.description || null,
+    article_url: r.link || "",
+    image_url: r.image_url || null,
+    published_at: normalizePubDate(r.pubDate || ""),
+    source: r.source_id || "",
+    group_key: normalizeGroupKey(r.title || ""),
+  }));
+  const groups = groupRows(rawWithKey);
+  const { pageGroups, total, totalPages } = paginateGroups(groups, page);
+  return jsonResponse({
+    articles: pageGroups.map((g) => groupToArticle(g, "Local", category)),
+    totalPages,
+    total,
+    page,
+    localBanner,
+  });
 }
 
 async function handleSearch(
@@ -280,24 +341,23 @@ async function handleSearch(
     return jsonResponse({ articles: [], totalPages: 1, total: 0, page: 1 });
   }
 
-  const offset = (page - 1) * PAGE_SIZE;
   let q = sb
     .from("article_cache")
-    .select("*", { count: "exact" })
+    .select("*")
     .or(`title.ilike.%${term}%,description.ilike.%${term}%`)
     .order("published_at", { ascending: sort === "asc" })
-    .range(offset, offset + PAGE_SIZE - 1);
+    .limit(POOL_LIMIT);
 
   if (dateFrom) q = q.gte("published_at", dateFrom);
   if (dateTo) q = q.lte("published_at", `${dateTo}T23:59:59`);
 
-  const { data, count, error } = await q;
+  const { data, error } = await q;
   if (error) throw error;
 
-  const total = count ?? 0;
-  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const groups = groupRows(data ?? []);
+  const { pageGroups, total, totalPages } = paginateGroups(groups, page);
   return jsonResponse({
-    articles: (data ?? []).map((r: any) => cacheRowToArticle(r, "Search", "All")),
+    articles: pageGroups.map((g) => groupToArticle(g, "Search", "All")),
     totalPages,
     total,
     page,
