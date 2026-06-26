@@ -50,8 +50,8 @@ Four tables:
 | Table | Purpose |
 |---|---|
 | `user` | User profile — `id` (UUID PK), `first_name`, `email`, optional `local_state`/`local_city` |
-| `article_cache` | Fetched news articles — `article_id` (VARCHAR PK), title, description, URLs, source, `category`, `country`, timestamps, `group_key` (normalized title for dedup) |
-| `saved_article` | Articles bookmarked by users — FK to `user.id`, stores article metadata inline (denormalized from `article_cache`) |
+| `article_cache` | Fetched news articles — `article_id` (VARCHAR PK), title, description, URLs, source, `category`, `country`, timestamps, `group_key` (normalized title — used for in-memory grouping at read time) |
+| `saved_article` | Articles bookmarked by users — FK to `user.id`, stores article metadata inline (denormalized); includes `group_key TEXT` (migration 20260626000001) for group-save semantics |
 | `saved_search` | Keyword searches saved by users — FK to `user.id`, `keywords` + optional `date_from`/`date_to` |
 
 **Important schema details:**
@@ -102,7 +102,9 @@ When widened, show a banner: *"Limited results for {City} — showing {State} ne
 
 ### Edge Function: `get-news`
 
-`supabase/functions/get-news/index.ts` is a Deno function that proxies **newsdata.io** (`/api/1/latest`) and returns a normalized article list. It runs with the **service role key** (bypasses RLS) to write to `article_cache`.
+`supabase/functions/get-news/index.ts` is a Deno function that proxies **newsdata.io** (`/api/1/latest`) and returns **grouped** articles. It runs with the **service role key** (bypasses RLS) to write to `article_cache`.
+
+**Grouping behavior:** All three modes fetch up to `POOL_LIMIT=500` rows from `article_cache`, group them in memory by `group_key` (rows sharing a key collapse into one group), then paginate over groups. Each response item includes `groupKey` (string), `sourceCount` (≥1), and `sources[]` (sorted a→z by source name). `totalPages` and `total` reflect group count, not row count. The representative article in each group prefers a non-null `image_url`, then picks the newest `published_at` among candidates.
 
 **Query params:**
 
@@ -117,9 +119,9 @@ When widened, show a banner: *"Limited results for {City} — showing {State} ne
 | `dateFrom` / `dateTo` | ISO date strings | Search mode date filter |
 | `sort` | `desc` (default) \| `asc` | Sort by `published_at` |
 
-**Browse flow:** Checks cache freshness (15-minute TTL). On miss, fetches from newsdata.io and upserts into `article_cache`, then pages from cache. Local region uses a two-tier query (city → state fallback if < 1 page). Weather is a keyword search (`q=weather`) since newsdata.io has no weather category. All other categories map through `CATEGORY_MAP`.
+**Browse flow:** Checks cache freshness (15-minute TTL). On miss, fetches from newsdata.io and upserts into `article_cache`. Then fetches up to `POOL_LIMIT=500` rows from cache, groups in memory by `group_key`, and paginates over groups. Local region uses a two-tier query (city → state fallback if < 1 page); raw newsdata.io results have no `group_key` column, so it's computed inline via `normalizeGroupKey(title)` before grouping. Weather is a keyword search (`q=weather`) since newsdata.io has no weather category. All other categories map through `CATEGORY_MAP`.
 
-**Search flow:** Full-text `ilike` filter on `title` and `description` against `article_cache` — does **not** hit newsdata.io.
+**Search flow:** Full-text `ilike` filter on `title` and `description` against `article_cache` (up to `POOL_LIMIT=500` rows) — does **not** hit newsdata.io. Results are grouped in memory and paginated over groups.
 
 **`applyNullSafeFilter` pattern:** `.eq('col', null)` sends `col=eq.null` (string match), not SQL `IS NULL`. Use `.is(col, null)` for null values — the helper `applyNullSafeFilter` handles this throughout the function.
 
