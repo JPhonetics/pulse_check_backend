@@ -23,6 +23,7 @@ CREATE TABLE public.article_cache (
   image_url text,
   country character varying,
   category character varying,
+  group_key text,
   CONSTRAINT article_cache_pkey PRIMARY KEY (article_id)
 );
 CREATE TABLE public.saved_article (
